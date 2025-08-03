@@ -1,0 +1,278 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        
+            <script src="lib/bindings/utils.js"></script>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/dist/vis-network.min.css" integrity="sha512-WgxfT5LWjfszlPHXRmBWHkV2eceiWTOBvrKCNbdgDYTHrT2AeLCGbF4sZlZw3UMN3WtL0tGUoIAKsu8mllg/XA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.js" integrity="sha512-LnvoEWDFrqGHlHmDD2101OrLcbsfkrzoSpvtSQtxK3RMnRV0eOkhhBN2dXHKRrUU8p2DGRTk35n4O8nWSVe1mQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+            
+        
+<center>
+<h1></h1>
+</center>
+
+<!-- <link rel="stylesheet" href="../node_modules/vis/dist/vis.min.css" type="text/css" />
+<script type="text/javascript" src="../node_modules/vis/dist/vis.js"> </script>-->
+        <link
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+          integrity="sha384-eOJMYsd53ii+scO/bJGFsiCZc+5NDVN2yr8+0RDqr0Ql0h+rP48ckxlpbzKgwra6"
+          crossorigin="anonymous"
+        />
+        <script
+          src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/js/bootstrap.bundle.min.js"
+          integrity="sha384-JEW9xMcG8R+pH31jmWH6WWP0WintQrMb4s7ZOdauHnUtxwoG2vI5DkLtS3qm9Ekf"
+          crossorigin="anonymous"
+        ></script>
+
+
+        <center>
+          <h1></h1>
+        </center>
+        <style type="text/css">
+
+             #mynetwork {
+                 width: 100%;
+                 height: 95vh;
+                 background-color: #ffffff;
+                 border: 1px solid lightgray;
+                 position: relative;
+                 float: left;
+             }
+
+             
+
+             
+
+             
+        </style>
+    </head>
+
+
+    <body>
+
+        <div style='position: absolute; top: 10px; left: 10px; background: rgba(248, 249, 250, 0.95); padding: 12px; border: 1px solid #dee2e6; border-radius: 8px; z-index: 1000; font-family: sans-serif; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);'>
+          <div style='font-weight: bold; margin-bottom: 10px; color: #333;'>Display Options</div>
+          
+          <div style='margin-bottom: 8px;'>
+            <label for='formulaToggle' style='cursor: pointer;'>
+              <input type='checkbox' id='formulaToggle'> Show Full Formula Path
+            </label>
+          </div>
+          
+          <div style='margin-bottom: 8px;'>
+            <label for='addressToggle' style='cursor: pointer;'>
+              <input type='checkbox' id='addressToggle'> Show Full Address Path
+            </label>
+          </div>
+          
+          <div style='margin-bottom: 8px;'>
+            <label for='fontSizeSlider' style='cursor: pointer; display: block; margin-bottom: 4px;'>
+              Font Size: <span id='fontSizeValue'>14</span>px
+            </label>
+            <input type='range' id='fontSizeSlider' min='10' max='24' value='14' style='width: 100%;'>
+          </div>
+          
+          <div style='border-top: 1px solid #ccc; margin-top: 12px; padding-top: 10px;'>
+            <div style='font-weight: bold; margin-bottom: 6px; color: #333;'>File Legend</div>
+            <div id='fileLegend' style='font-size: 12px;'>
+              <!-- 動態生成的檔案圖例將在這裡顯示 -->
+            </div>
+            <div style='margin-top: 8px; font-size: 11px; color: #666;'>
+              相同顏色 = 同一檔案<br>
+              不同顏色間的箭頭 = 跨檔案依賴
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" style="width: 100%">
+            
+            
+            <div id="mynetwork" class="card-body"></div>
+        </div>
+
+        
+        
+
+        <script type="text/javascript">
+
+              // initialize global variables.
+              var edges;
+              var nodes;
+              var allNodes;
+              var allEdges;
+              var nodeColors;
+              var originalNodes;
+              var network;
+              var container;
+              var options, data;
+              var filter = {
+                  item : '',
+                  property : '',
+                  value : []
+              };
+
+              
+
+              
+
+              // This method is responsible for drawing the graph, returns the drawn network
+              function drawGraph() {
+                  var container = document.getElementById('mynetwork');
+
+                  
+
+                  // parsing and collecting nodes and edges from the python
+                  nodes = new vis.DataSet([{"color": "#dc3545", "filename": "File5_v2.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\[File5_v2.xlsx]\u5de5\u4f5c\u88681\u0027!B12", "full_formula_label": "=\u0027C:\\Users\\user\\Desktop\\pytest\\MD9\\[test.xlsx]\u5de5\u4f5c\u88681\u0027!$A$1+\u0027C:\\Users\\user\\Desktop\\pytest\\folder with space\\[File name with space.xlsx]work sheet\u0027!$A$1", "id": "[File5_v2.xlsx]\u5de5\u4f5c\u88681!B12", "label": "Address : \u003cb\u003e[File5_v2.xlsx]\u5de5\u4f5c\u88681!B12\u003c/b\u003e\n\nFormula : \u003ci\u003e=[test.xlsx]\u5de5\u4f5c\u88681!$A$1+[File name with space.xlsx]work sheet!$A$1\u003c/i\u003e\n\nValue     : 4053", "shape": "box", "short_address_label": "[File5_v2.xlsx]\u5de5\u4f5c\u88681!B12", "short_formula_label": "[test.xlsx]\u5de5\u4f5c\u88681!$A$1+[File name with space.xlsx]work sheet!$A$1", "title": "Address: [File5_v2.xlsx]\u5de5\u4f5c\u88681!B12\n***\nType: Formula\n***\nFormula: =\u0027C:\\Users\\user\\Desktop\\pytest\\MD9\\[test.xlsx]\u5de5\u4f5c\u88681\u0027!$A$1+\u0027C:\\Users\\user\\Desktop\\pytest\\folder with space\\[File name with space.xlsx]work sheet\u0027!$A$1\n***\nValue: 4053\n***\nFile: File5_v2.xlsx", "value_label": "4053", "x": 0.0, "y": 0}, {"color": "#6f42c1", "filename": "test.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\MD9\\[test.xlsx]\u5de5\u4f5c\u88681\u0027!A1", "full_formula_label": "=\u0027C:\\Users\\user\\Desktop\\pytest\\[File3.xlsx]GDP\u0027!$I$4+\u0027C:\\Users\\user\\Desktop\\pytest\\[File3.xlsx]\u5de5\u4f5c\u88681\u0027!$A$1", "id": "[test.xlsx]\u5de5\u4f5c\u88681!A1", "label": "Address : \u003cb\u003e[test.xlsx]\u5de5\u4f5c\u88681!A1\u003c/b\u003e\n\nFormula : \u003ci\u003e=[File3.xlsx]GDP!$I$4+[File3.xlsx]\u5de5\u4f5c\u88681!$A$1\u003c/i\u003e\n\nValue     : 6070", "shape": "box", "short_address_label": "[test.xlsx]\u5de5\u4f5c\u88681!A1", "short_formula_label": "[File3.xlsx]GDP!$I$4+[File3.xlsx]\u5de5\u4f5c\u88681!$A$1", "title": "Address: [test.xlsx]\u5de5\u4f5c\u88681!A1\n***\nType: Formula\n***\nFormula: =\u0027C:\\Users\\user\\Desktop\\pytest\\[File3.xlsx]GDP\u0027!$I$4+\u0027C:\\Users\\user\\Desktop\\pytest\\[File3.xlsx]\u5de5\u4f5c\u88681\u0027!$A$1\n***\nValue: 6070\n***\nFile: test.xlsx", "value_label": "6070", "x": -200.0, "y": 250}, {"color": "#ff8c00", "filename": "File3.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\[File3.xlsx]GDP\u0027!I4", "full_formula_label": "=A3+A2+A4", "id": "[File3.xlsx]GDP!I4", "label": "Address : \u003cb\u003e[File3.xlsx]GDP!I4\u003c/b\u003e\n\nFormula : \u003ci\u003e=A3+A2+A4\u003c/i\u003e\n\nValue     : 6069", "shape": "box", "short_address_label": "[File3.xlsx]GDP!I4", "short_formula_label": "A3+A2+A4", "title": "Address: [File3.xlsx]GDP!I4\n***\nType: Formula\n***\nFormula: =A3+A2+A4\n***\nValue: 6069\n***\nFile: File3.xlsx", "value_label": "6069", "x": -600.0, "y": 500}, {"color": "#ff8c00", "filename": "File3.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\[File3.xlsx]GDP\u0027!A3", "full_formula_label": null, "id": "[File3.xlsx]GDP!A3", "label": "Address : \u003cb\u003e[File3.xlsx]GDP!A3\u003c/b\u003e\n\nValue     : 2023", "shape": "box", "short_address_label": "[File3.xlsx]GDP!A3", "short_formula_label": "N/A", "title": "Address: [File3.xlsx]GDP!A3\n***\nType: Value\n***\nValue: 2023\n***\nFile: File3.xlsx", "value_label": "2023", "x": -600.0, "y": 750}, {"color": "#ff8c00", "filename": "File3.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\[File3.xlsx]GDP\u0027!A2", "full_formula_label": "=\u0027C:\\Users\\user\\Desktop\\pytest\\[File5_v2.xlsx]\u5de5\u4f5c\u88681\u0027!$A$1", "id": "[File3.xlsx]GDP!A2", "label": "Address : \u003cb\u003e[File3.xlsx]GDP!A2\u003c/b\u003e\n\nFormula : \u003ci\u003e=[File5_v2.xlsx]\u5de5\u4f5c\u88681!$A$1\u003c/i\u003e\n\nValue     : 2023", "shape": "box", "short_address_label": "[File3.xlsx]GDP!A2", "short_formula_label": "[File5_v2.xlsx]\u5de5\u4f5c\u88681!$A$1", "title": "Address: [File3.xlsx]GDP!A2\n***\nType: Formula\n***\nFormula: =\u0027C:\\Users\\user\\Desktop\\pytest\\[File5_v2.xlsx]\u5de5\u4f5c\u88681\u0027!$A$1\n***\nValue: 2023\n***\nFile: File3.xlsx", "value_label": "2023", "x": -200.0, "y": 750}, {"color": "#007bff", "filename": "Current File", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u5de5\u4f5c\u88681!A1", "full_formula_label": "=\u5de5\u4f5c\u88684!A1", "id": "\u5de5\u4f5c\u88681!A1", "label": "Address : \u003cb\u003e\u5de5\u4f5c\u88681!A1\u003c/b\u003e\n\nFormula : \u003ci\u003e=\u5de5\u4f5c\u88684!A1\u003c/i\u003e\n\nValue     : 2023", "shape": "box", "short_address_label": "\u5de5\u4f5c\u88681!A1", "short_formula_label": "\u5de5\u4f5c\u88684!A1", "title": "Address: \u5de5\u4f5c\u88681!A1\n***\nType: Formula\n***\nFormula: =\u5de5\u4f5c\u88684!A1\n***\nValue: 2023\n***\nFile: Current File", "value_label": "2023", "x": -600.0, "y": 1000}, {"color": "#007bff", "filename": "Current File", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u5de5\u4f5c\u88684!A1", "full_formula_label": "=\u5de5\u4f5c\u88683!A1", "id": "\u5de5\u4f5c\u88684!A1", "label": "Address : \u003cb\u003e\u5de5\u4f5c\u88684!A1\u003c/b\u003e\n\nFormula : \u003ci\u003e=\u5de5\u4f5c\u88683!A1\u003c/i\u003e\n\nValue     : 2023", "shape": "box", "short_address_label": "\u5de5\u4f5c\u88684!A1", "short_formula_label": "\u5de5\u4f5c\u88683!A1", "title": "Address: \u5de5\u4f5c\u88684!A1\n***\nType: Formula\n***\nFormula: =\u5de5\u4f5c\u88683!A1\n***\nValue: 2023\n***\nFile: Current File", "value_label": "2023", "x": 0.0, "y": 1250}, {"color": "#007bff", "filename": "Current File", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u5de5\u4f5c\u88683!A1", "full_formula_label": "=\u0027C:\\Users\\user\\Desktop\\pytest\\[File3.xlsx]GDP\u0027!$A$5", "id": "\u5de5\u4f5c\u88683!A1", "label": "Address : \u003cb\u003e\u5de5\u4f5c\u88683!A1\u003c/b\u003e\n\nFormula : \u003ci\u003e=[File3.xlsx]GDP!$A$5\u003c/i\u003e\n\nValue     : 2023", "shape": "box", "short_address_label": "\u5de5\u4f5c\u88683!A1", "short_formula_label": "[File3.xlsx]GDP!$A$5", "title": "Address: \u5de5\u4f5c\u88683!A1\n***\nType: Formula\n***\nFormula: =\u0027C:\\Users\\user\\Desktop\\pytest\\[File3.xlsx]GDP\u0027!$A$5\n***\nValue: 2023\n***\nFile: Current File", "value_label": "2023", "x": 0.0, "y": 1500}, {"color": "#ff8c00", "filename": "File3.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\[File3.xlsx]GDP\u0027!A5", "full_formula_label": null, "id": "[File3.xlsx]GDP!A5", "label": "Address : \u003cb\u003e[File3.xlsx]GDP!A5\u003c/b\u003e\n\nValue     : 2023", "shape": "box", "short_address_label": "[File3.xlsx]GDP!A5", "short_formula_label": "N/A", "title": "Address: [File3.xlsx]GDP!A5\n***\nType: Value\n***\nValue: 2023\n***\nFile: File3.xlsx", "value_label": "2023", "x": 0.0, "y": 1750}, {"color": "#ff8c00", "filename": "File3.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\[File3.xlsx]GDP\u0027!A4", "full_formula_label": null, "id": "[File3.xlsx]GDP!A4", "label": "Address : \u003cb\u003e[File3.xlsx]GDP!A4\u003c/b\u003e\n\nValue     : 2023", "shape": "box", "short_address_label": "[File3.xlsx]GDP!A4", "short_formula_label": "N/A", "title": "Address: [File3.xlsx]GDP!A4\n***\nType: Value\n***\nValue: 2023\n***\nFile: File3.xlsx", "value_label": "2023", "x": 200.0, "y": 750}, {"color": "#ff8c00", "filename": "File3.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\[File3.xlsx]\u5de5\u4f5c\u88681\u0027!A1", "full_formula_label": null, "id": "[File3.xlsx]\u5de5\u4f5c\u88681!A1", "label": "Address : \u003cb\u003e[File3.xlsx]\u5de5\u4f5c\u88681!A1\u003c/b\u003e\n\nValue     : 1", "shape": "box", "short_address_label": "[File3.xlsx]\u5de5\u4f5c\u88681!A1", "short_formula_label": "N/A", "title": "Address: [File3.xlsx]\u5de5\u4f5c\u88681!A1\n***\nType: Value\n***\nValue: 1\n***\nFile: File3.xlsx", "value_label": "1", "x": -200.0, "y": 500}, {"color": "#28a745", "filename": "File name with space.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\folder with space\\[File name with space.xlsx]work sheet\u0027!A1", "full_formula_label": "=A2-A3", "id": "[File name with space.xlsx]work sheet!A1", "label": "Address : \u003cb\u003e[File name with space.xlsx]work sheet!A1\u003c/b\u003e\n\nFormula : \u003ci\u003e=A2-A3\u003c/i\u003e\n\nValue     : -2017", "shape": "box", "short_address_label": "[File name with space.xlsx]work sheet!A1", "short_formula_label": "A2-A3", "title": "Address: [File name with space.xlsx]work sheet!A1\n***\nType: Formula\n***\nFormula: =A2-A3\n***\nValue: -2017\n***\nFile: File name with space.xlsx", "value_label": "-2017", "x": 200.0, "y": 250}, {"color": "#28a745", "filename": "File name with space.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\folder with space\\[File name with space.xlsx]work sheet\u0027!A2", "full_formula_label": "=B2", "id": "[File name with space.xlsx]work sheet!A2", "label": "Address : \u003cb\u003e[File name with space.xlsx]work sheet!A2\u003c/b\u003e\n\nFormula : \u003ci\u003e=B2\u003c/i\u003e\n\nValue     : 6", "shape": "box", "short_address_label": "[File name with space.xlsx]work sheet!A2", "short_formula_label": "B2", "title": "Address: [File name with space.xlsx]work sheet!A2\n***\nType: Formula\n***\nFormula: =B2\n***\nValue: 6\n***\nFile: File name with space.xlsx", "value_label": "6", "x": 200.0, "y": 500}, {"color": "#28a745", "filename": "File name with space.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\folder with space\\[File name with space.xlsx]work sheet\u0027!B2", "full_formula_label": "=C2+C3+C4", "id": "[File name with space.xlsx]work sheet!B2", "label": "Address : \u003cb\u003e[File name with space.xlsx]work sheet!B2\u003c/b\u003e\n\nFormula : \u003ci\u003e=C2+C3+C4\u003c/i\u003e\n\nValue     : 6", "shape": "box", "short_address_label": "[File name with space.xlsx]work sheet!B2", "short_formula_label": "C2+C3+C4", "title": "Address: [File name with space.xlsx]work sheet!B2\n***\nType: Formula\n***\nFormula: =C2+C3+C4\n***\nValue: 6\n***\nFile: File name with space.xlsx", "value_label": "6", "x": 600.0, "y": 750}, {"color": "#28a745", "filename": "File name with space.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\folder with space\\[File name with space.xlsx]work sheet\u0027!C2", "full_formula_label": null, "id": "[File name with space.xlsx]work sheet!C2", "label": "Address : \u003cb\u003e[File name with space.xlsx]work sheet!C2\u003c/b\u003e\n\nValue     : 1", "shape": "box", "short_address_label": "[File name with space.xlsx]work sheet!C2", "short_formula_label": "N/A", "title": "Address: [File name with space.xlsx]work sheet!C2\n***\nType: Value\n***\nValue: 1\n***\nFile: File name with space.xlsx", "value_label": "1", "x": -200.0, "y": 1000}, {"color": "#28a745", "filename": "File name with space.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\folder with space\\[File name with space.xlsx]work sheet\u0027!C3", "full_formula_label": null, "id": "[File name with space.xlsx]work sheet!C3", "label": "Address : \u003cb\u003e[File name with space.xlsx]work sheet!C3\u003c/b\u003e\n\nValue     : 2", "shape": "box", "short_address_label": "[File name with space.xlsx]work sheet!C3", "short_formula_label": "N/A", "title": "Address: [File name with space.xlsx]work sheet!C3\n***\nType: Value\n***\nValue: 2\n***\nFile: File name with space.xlsx", "value_label": "2", "x": 200.0, "y": 1000}, {"color": "#28a745", "filename": "File name with space.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\folder with space\\[File name with space.xlsx]work sheet\u0027!C4", "full_formula_label": null, "id": "[File name with space.xlsx]work sheet!C4", "label": "Address : \u003cb\u003e[File name with space.xlsx]work sheet!C4\u003c/b\u003e\n\nValue     : 3", "shape": "box", "short_address_label": "[File name with space.xlsx]work sheet!C4", "short_formula_label": "N/A", "title": "Address: [File name with space.xlsx]work sheet!C4\n***\nType: Value\n***\nValue: 3\n***\nFile: File name with space.xlsx", "value_label": "3", "x": 600.0, "y": 1000}, {"color": "#28a745", "filename": "File name with space.xlsx", "fixed": false, "font": {"color": "black"}, "full_address_label": "\u0027C:\\Users\\user\\Desktop\\pytest\\folder with space\\[File name with space.xlsx]work sheet\u0027!A3", "full_formula_label": "=\u0027C:\\Users\\user\\Desktop\\pytest\\[File3.xlsx]GDP\u0027!$A$5", "id": "[File name with space.xlsx]work sheet!A3", "label": "Address : \u003cb\u003e[File name with space.xlsx]work sheet!A3\u003c/b\u003e\n\nFormula : \u003ci\u003e=[File3.xlsx]GDP!$A$5\u003c/i\u003e\n\nValue     : 2023", "shape": "box", "short_address_label": "[File name with space.xlsx]work sheet!A3", "short_formula_label": "[File3.xlsx]GDP!$A$5", "title": "Address: [File name with space.xlsx]work sheet!A3\n***\nType: Formula\n***\nFormula: =\u0027C:\\Users\\user\\Desktop\\pytest\\[File3.xlsx]GDP\u0027!$A$5\n***\nValue: 2023\n***\nFile: File name with space.xlsx", "value_label": "2023", "x": 600.0, "y": 500}]);
+                  edges = new vis.DataSet([{"arrows": "to", "from": "[File5_v2.xlsx]\u5de5\u4f5c\u88681!B12", "to": "[test.xlsx]\u5de5\u4f5c\u88681!A1"}, {"arrows": "to", "from": "[test.xlsx]\u5de5\u4f5c\u88681!A1", "to": "[File3.xlsx]GDP!I4"}, {"arrows": "to", "from": "[File3.xlsx]GDP!I4", "to": "[File3.xlsx]GDP!A3"}, {"arrows": "to", "from": "[File3.xlsx]GDP!I4", "to": "[File3.xlsx]GDP!A2"}, {"arrows": "to", "from": "[File3.xlsx]GDP!A2", "to": "\u5de5\u4f5c\u88681!A1"}, {"arrows": "to", "from": "\u5de5\u4f5c\u88681!A1", "to": "\u5de5\u4f5c\u88684!A1"}, {"arrows": "to", "from": "\u5de5\u4f5c\u88684!A1", "to": "\u5de5\u4f5c\u88683!A1"}, {"arrows": "to", "from": "\u5de5\u4f5c\u88683!A1", "to": "[File3.xlsx]GDP!A5"}, {"arrows": "to", "from": "[File3.xlsx]GDP!I4", "to": "[File3.xlsx]GDP!A4"}, {"arrows": "to", "from": "[test.xlsx]\u5de5\u4f5c\u88681!A1", "to": "[File3.xlsx]\u5de5\u4f5c\u88681!A1"}, {"arrows": "to", "from": "[File5_v2.xlsx]\u5de5\u4f5c\u88681!B12", "to": "[File name with space.xlsx]work sheet!A1"}, {"arrows": "to", "from": "[File name with space.xlsx]work sheet!A1", "to": "[File name with space.xlsx]work sheet!A2"}, {"arrows": "to", "from": "[File name with space.xlsx]work sheet!A2", "to": "[File name with space.xlsx]work sheet!B2"}, {"arrows": "to", "from": "[File name with space.xlsx]work sheet!B2", "to": "[File name with space.xlsx]work sheet!C2"}, {"arrows": "to", "from": "[File name with space.xlsx]work sheet!B2", "to": "[File name with space.xlsx]work sheet!C3"}, {"arrows": "to", "from": "[File name with space.xlsx]work sheet!B2", "to": "[File name with space.xlsx]work sheet!C4"}, {"arrows": "to", "from": "[File name with space.xlsx]work sheet!A1", "to": "[File name with space.xlsx]work sheet!A3"}, {"arrows": "to", "from": "[File name with space.xlsx]work sheet!A3", "to": "[File3.xlsx]GDP!A5"}]);
+
+                  nodeColors = {};
+                  allNodes = nodes.get({ returnType: "Object" });
+                  for (nodeId in allNodes) {
+                    nodeColors[nodeId] = allNodes[nodeId].color;
+                  }
+                  allEdges = edges.get({ returnType: "Object" });
+                  // adding nodes and edges to the graph
+                  data = {nodes: nodes, edges: edges};
+
+                  var options = {"interaction": {"dragNodes": true, "dragView": true, "zoomView": true}, "physics": {"enabled": false}, "nodes": {"font": {"align": "left", "multi": "html"}}, "edges": {"smooth": {"type": "cubicBezier", "forceDirection": "vertical", "roundness": 0.4}}};
+
+                  
+
+
+                  
+
+                  network = new vis.Network(container, data, options);
+
+                  
+
+                  
+
+                  
+
+
+                  
+
+                  return network;
+
+              }
+              drawGraph();
+        </script>
+    
+        <script type='text/javascript'>
+          document.addEventListener('DOMContentLoaded', function() {
+            var network = window.network;
+            var nodes = window.nodes;
+            if (!network || !nodes) { return; }
+
+            const formulaToggle = document.getElementById('formulaToggle');
+            const addressToggle = document.getElementById('addressToggle');
+            const fontSizeSlider = document.getElementById('fontSizeSlider');
+            const fontSizeValue = document.getElementById('fontSizeValue');
+
+
+            function updateNodeLabels() {
+              const showFullAddress = addressToggle.checked;
+              const showFullFormula = formulaToggle.checked;
+              const fontSize = parseInt(fontSizeSlider.value);
+              const currentPositions = network.getPositions();
+              let updatedNodes = [];
+              let allNodes = nodes.get({ returnType: 'Array' });
+
+              allNodes.forEach(node => {
+                const addressLabel = showFullAddress ? node.full_address_label : node.short_address_label;
+                const formulaLabel = showFullFormula ? node.full_formula_label : node.short_formula_label;
+                
+                let newLabel = 'Address : <b>' + addressLabel + '</b>';
+                
+                if (formulaLabel && formulaLabel !== 'N/A') {
+                  const displayFormula = formulaLabel.startsWith('=') ? formulaLabel : '=' + formulaLabel;
+                  newLabel += '\n\nFormula : <i>' + displayFormula + '</i>';
+                }
+                
+                newLabel += '\n\nValue     : ' + node.value_label;
+                
+                const position = currentPositions[node.id];
+                if (position) {
+                    const baseSize = 150;
+                    const sizeMultiplier = fontSize / 14;
+                    const nodeSize = Math.max(baseSize * sizeMultiplier, 100);
+                    
+                    
+                    updatedNodes.push({
+                      id: node.id,
+                      label: newLabel,
+                      x: position.x,
+                      y: position.y,
+                      fixed: true,
+                      font: { size: fontSize, align: 'left' },
+                      widthConstraint: { minimum: nodeSize, maximum: nodeSize * 1.5 },
+                      heightConstraint: { minimum: nodeSize * 0.6, maximum: nodeSize * 1.5 }
+                    });
+                }
+              });
+              
+              if (updatedNodes.length > 0) {
+                  nodes.update(updatedNodes);
+                  setTimeout(() => {
+                      let releaseNodes = updatedNodes.map(n => ({ id: n.id, fixed: false }));
+                      nodes.update(releaseNodes);
+                  }, 100);
+              }
+            }
+
+            function updateFontSize() {
+              const fontSize = parseInt(fontSizeSlider.value);
+              fontSizeValue.textContent = fontSize;
+              updateNodeLabels();
+            }
+
+            function generateFileLegend() {
+              const fileLegendDiv = document.getElementById('fileLegend');
+              if (!fileLegendDiv) return;
+              
+              const fileColors = new Map();
+              const allNodes = nodes.get({ returnType: 'Array' });
+              
+              allNodes.forEach(node => {
+                // 從節點數據中讀取 filename 和 color
+                const color = node.color || '#808080'; // 灰色作為後備
+                const filename = node.filename || 'Unknown File'; // 後備名稱
+                
+                // 如果 Map 中沒有這個檔案名，就添加它
+                if (!fileColors.has(filename)) {
+                  fileColors.set(filename, color);
+                }
+              });
+              
+              // 對檔案名進行排序，確保 Current File 在最前面
+              const sortedFiles = Array.from(fileColors.entries()).sort((a, b) => {
+                if (a[0] === 'Current File') return -1;
+                if (b[0] === 'Current File') return 1;
+                return a[0].localeCompare(b[0]);
+              });
+              
+              // 生成圖例的 HTML
+              let legendHTML = '';
+              sortedFiles.forEach(([filename, color]) => {
+                legendHTML += `<div style="display: flex; align-items: center; margin-bottom: 4px;" title="檔案: ${filename}">`;
+                legendHTML += `<div style="width: 16px; height: 16px; background-color: ${color}; margin-right: 8px; border-radius: 3px; border: 1px solid #ddd;"></div>`;
+                legendHTML += `<span style="font-size: 12px; font-weight: 500; color: #333;">${filename}</span>`;
+                legendHTML += '</div>';
+              });
+              
+              // 將生成的 HTML 插入到圖例容器中
+              fileLegendDiv.innerHTML = legendHTML;
+            }
+
+            addressToggle.addEventListener('change', updateNodeLabels);
+            formulaToggle.addEventListener('change', updateNodeLabels);
+            fontSizeSlider.addEventListener('input', updateFontSize);
+            
+            // 頁面載入後，立即生成檔案圖例
+            generateFileLegend();
+          });
+        </script>
+        
+</body>
+</html>
