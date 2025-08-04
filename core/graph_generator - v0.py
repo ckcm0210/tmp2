@@ -1,5 +1,3 @@
-﻿# graph_generator.py
-
 import os
 import webbrowser
 import json
@@ -14,13 +12,8 @@ class GraphGenerator:
         """
         生成完全獨立的 HTML 文件，所有資源都內嵌，可在受限瀏覽器中使用
         """
-        # 1. 手動計算階層式佈局的初始座標
         self._calculate_node_positions()
-
-        # 2. 生成獨立 HTML 內容
         html_content = self._generate_standalone_html()
-
-        # 3. 保存最終文件
         final_file_path = os.path.join(os.getcwd(), self.output_filename)
         
         try:
@@ -30,18 +23,23 @@ class GraphGenerator:
         except Exception as e:
             print(f"Error saving file: {e}")
             return
-
-        # 4. 在瀏覽器中打開
         webbrowser.open(f"file://{final_file_path}")
 
     def _generate_standalone_html(self):
         """
         生成完全獨立的 HTML，包含所有內嵌資源
         """
-        # 準備節點和邊數據
         processed_nodes = []
         for node in self.nodes_data:
-            processed_node = {
+            full_addr = node.get("full_address_label", "")
+            shortest_addr = full_addr
+            last_bracket_index = full_addr.rfind(']')
+            if last_bracket_index != -1:
+                shortest_addr = full_addr[last_bracket_index + 1:]
+                if shortest_addr.startswith("'"):
+                    shortest_addr = shortest_addr[1:]
+            
+            processed_nodes.append({
                 "id": self._safe_string(node["id"]),
                 "label": self._safe_string(node["label"]),
                 "title": self._safe_string(node["title"]),
@@ -49,33 +47,31 @@ class GraphGenerator:
                 "shape": "box",
                 "x": node.get('x', 0),
                 "y": node.get('y', 0),
+                "level": node.get('level', 0),
                 "fixed": False,
                 "font": {"color": "black"},
                 "filename": self._safe_string(node.get('filename', 'Current File')),
                 "short_address_label": self._safe_string(node["short_address_label"]),
                 "full_address_label": self._safe_string(node["full_address_label"]),
+                "shortest_address_label": self._safe_string(shortest_addr),
                 "short_formula_label": self._safe_string(node["short_formula_label"]),
                 "full_formula_label": self._safe_string(node["full_formula_label"]),
                 "value_label": self._safe_string(node["value_label"])
-            }
-            processed_nodes.append(processed_node)
-
+            })
+        
         processed_edges = []
         for edge in self.edges_data:
-            processed_edge = {
+            processed_edges.append({
                 "arrows": "to",
                 "from": self._safe_string(edge[0]),
                 "to": self._safe_string(edge[1])
-            }
-            processed_edges.append(processed_edge)
-
-        # 安全編碼 JSON
+            })
+            
         nodes_json = self._safe_json_encode(processed_nodes)
         edges_json = self._safe_json_encode(processed_edges)
 
         print(f"Processing {len(processed_nodes)} nodes and {len(processed_edges)} edges")
 
-        # 內嵌的 vis.js（完整版本 - 修正節點尺寸問題）
         vis_js_content = """
         // Complete vis.js implementation for network visualization
         var vis = (function() {
@@ -83,6 +79,7 @@ class GraphGenerator:
             function DataSet(data) {
                 this.data = data || [];
                 this.length = this.data.length;
+                this.initialData = JSON.parse(JSON.stringify(data));
             }
             
             DataSet.prototype.get = function(options) {
@@ -96,6 +93,10 @@ class GraphGenerator:
                     return this.data.slice();
                 }
                 return this.data.slice();
+            };
+
+            DataSet.prototype.getInitialData = function() {
+                return JSON.parse(JSON.stringify(this.initialData));
             };
             
             DataSet.prototype.update = function(updates) {
@@ -119,7 +120,7 @@ class GraphGenerator:
                 this.canvas = null;
                 this.ctx = null;
                 this.nodePositions = {};
-                this.nodeSizes = {}; // 新增：儲存每個節點的計算尺寸
+                this.nodeSizes = {};
                 this.isDragging = false;
                 this.dragNode = null;
                 this.dragOffset = {x: 0, y: 0};
@@ -140,85 +141,143 @@ class GraphGenerator:
                 this.container.appendChild(this.canvas);
                 this.ctx = this.canvas.getContext('2d');
                 
-                // 監聽窗口大小變化
                 window.addEventListener('resize', () => {
                     this.canvas.width = this.container.clientWidth;
                     this.canvas.height = this.container.clientHeight;
-                    this.draw();
+                    this.reorganizeLayout();
                 });
                 
-                // 初始化節點位置和尺寸
                 var nodes = this.nodes.get();
                 nodes.forEach(node => {
                     this.nodePositions[node.id] = {
-                        x: (node.x || 0) + this.canvas.width / 2,
-                        y: (node.y || 0) + this.canvas.height / 2
+                        x: (node.x || 0),
+                        y: (node.y || 0)
                     };
-                    // 計算每個節點的尺寸
                     this.calculateNodeSize(node);
                 });
                 
-                this.draw();
+                this.reorganizeLayout();
                 this.setupEvents();
             };
             
+            // **最終修正: 徹底修正 padding 計算，確保垂直置中**
             Network.prototype.calculateNodeSize = function(node) {
-                // 創建臨時canvas來測量文字尺寸
-                var tempCanvas = document.createElement('canvas');
-                var tempCtx = tempCanvas.getContext('2d');
-                
+                var tempCtx = this.ctx;
                 var fontSize = (node.font && node.font.size) || 14;
-                tempCtx.font = fontSize + 'px Arial';
-                
-                // 處理標籤文字
                 var label = node.label || node.id;
                 var lines = label.split('\\n');
                 
-                var maxWidth = 0;
-                var totalHeight = 0;
-                var lineHeight = fontSize + 4; // 增加行間距
-                var padding = 20; // 內邊距
-                
+                var padding = 10;
+                var minHeight = 40;
+                var maxContentWidth = 450;
+
+                var textBlockHeight = 0;
+                var actualContentWidth = 0;
+
                 lines.forEach((line, index) => {
-                    // 移除HTML標籤來測量實際文字寬度
                     var cleanLine = line.replace(/<[^>]*>/g, '');
+                    var fontStyle = (line.includes('<b>') ? 'bold ' : '') + (line.includes('<i>') ? 'italic ' : '');
+                    tempCtx.font = fontStyle + fontSize + 'px Arial';
                     
-                    // 測量這行文字的寬度
-                    var lineWidth = tempCtx.measureText(cleanLine).width;
-                    maxWidth = Math.max(maxWidth, lineWidth);
-                    totalHeight += lineHeight;
+                    if (cleanLine.trim() === '') {
+                        textBlockHeight += (fontSize + 4) / 2;
+                        return;
+                    }
+
+                    var words = cleanLine.split(' ');
+                    var currentLine = '';
+                    for (var i = 0; i < words.length; i++) {
+                        var testLine = currentLine + words[i] + ' ';
+                        var metrics = tempCtx.measureText(testLine);
+                        
+                        if (metrics.width > maxContentWidth && i > 0) {
+                            actualContentWidth = Math.max(actualContentWidth, tempCtx.measureText(currentLine).width);
+                            textBlockHeight += (fontSize + 4);
+                            currentLine = words[i] + ' ';
+                        } else {
+                            currentLine = testLine;
+                        }
+                    }
+                    
+                    actualContentWidth = Math.max(actualContentWidth, tempCtx.measureText(currentLine).width);
+                    textBlockHeight += (fontSize + 4);
+
+                    if (index < lines.length - 1 && cleanLine.trim() !== '') {
+                        textBlockHeight += 4;
+                    }
                 });
                 
-                // 設定最小和最大尺寸
-                var minWidth = 150;
-                var maxWidthLimit = 400;
-                var minHeight = 60;
-                
-                var calculatedWidth = Math.max(minWidth, Math.min(maxWidth + padding * 2, maxWidthLimit));
-                var calculatedHeight = Math.max(minHeight, totalHeight + padding);
-                
-                // 儲存計算出的尺寸
+                // **修正: 移除最後一行多餘的行高**
+                textBlockHeight -= 4;
+
                 this.nodeSizes[node.id] = {
-                    width: calculatedWidth,
-                    height: calculatedHeight
+                    width: actualContentWidth + padding * 2,
+                    height: Math.max(minHeight, textBlockHeight + padding * 2),
+                    textBlockHeight: textBlockHeight // **新增: 儲存純文字塊的高度**
                 };
+            };
+            
+            Network.prototype.reorganizeLayout = function() {
+                var verticalSpacingSlider = document.getElementById('verticalSpacingSlider');
+                var level_y_step = verticalSpacingSlider ? parseInt(verticalSpacingSlider.value) : 450;
+
+                var initialNodes = this.nodes.getInitialData();
+                var levels = {};
+                var horizontalGap = 40;
+
+                initialNodes.forEach(node => {
+                    var level = node.level;
+                    if (!levels[level]) { levels[level] = []; }
+                    levels[level].push(node.id);
+                });
+
+                for (var level in levels) {
+                    var levelNodes = levels[level];
+                    levelNodes.sort((a, b) => {
+                        var nodeA_initial = initialNodes.find(n => n.id === a);
+                        var nodeB_initial = initialNodes.find(n => n.id === b);
+                        return nodeA_initial.x - nodeB_initial.x;
+                    });
+                    
+                    if (levelNodes.length > 0) {
+                        var totalLevelWidth = 0;
+                        levelNodes.forEach((nodeId, index) => {
+                            totalLevelWidth += this.nodeSizes[nodeId].width;
+                            if (index > 0) {
+                                totalLevelWidth += horizontalGap;
+                            }
+                        });
+                        
+                        var startX = (this.canvas.width - totalLevelWidth) / 2;
+                        var rightmostX = startX - horizontalGap;
+
+                        for (var i = 0; i < levelNodes.length; i++) {
+                            var currNodeId = levelNodes[i];
+                            var currPos = this.nodePositions[currNodeId];
+                            var currSize = this.nodeSizes[currNodeId];
+                            
+                            currPos.y = level * level_y_step;
+                            
+                            var requiredX = rightmostX + (currSize.width / 2) + horizontalGap;
+                            currPos.x = requiredX;
+                            
+                            rightmostX = currPos.x + (currSize.width / 2);
+                        }
+                    }
+                }
+                this.draw();
             };
             
             Network.prototype.draw = function() {
                 var ctx = this.ctx;
                 ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                
-                // 應用視圖變換
                 ctx.save();
                 ctx.scale(this.scale, this.scale);
-                ctx.translate(this.viewOffset.x / this.scale, this.viewOffset.y / this.scale);
-                
-                // 繪製邊
+                ctx.translate(this.viewOffset.x, this.viewOffset.y);
                 var edges = this.edges.get();
                 edges.forEach(edge => {
                     var fromPos = this.nodePositions[edge.from];
                     var toPos = this.nodePositions[edge.to];
-                    
                     if (fromPos && toPos) {
                         ctx.beginPath();
                         ctx.moveTo(fromPos.x, fromPos.y);
@@ -226,13 +285,9 @@ class GraphGenerator:
                         ctx.strokeStyle = '#848484';
                         ctx.lineWidth = 1;
                         ctx.stroke();
-                        
-                        // 繪製箭頭
                         this.drawArrow(ctx, fromPos.x, fromPos.y, toPos.x, toPos.y, edge.from, edge.to);
                     }
                 });
-                
-                // 繪製節點
                 var nodes = this.nodes.get();
                 nodes.forEach(node => {
                     var pos = this.nodePositions[node.id];
@@ -240,12 +295,10 @@ class GraphGenerator:
                         this.drawNode(ctx, node, pos.x, pos.y);
                     }
                 });
-                
                 ctx.restore();
             };
             
             Network.prototype.drawNode = function(ctx, node, x, y) {
-                // 使用計算出的尺寸
                 var nodeSize = this.nodeSizes[node.id];
                 if (!nodeSize) {
                     this.calculateNodeSize(node);
@@ -255,43 +308,35 @@ class GraphGenerator:
                 var width = nodeSize.width;
                 var height = nodeSize.height;
                 
-                // 繪製節點背景
                 ctx.fillStyle = node.color || '#97C2FC';
                 ctx.fillRect(x - width/2, y - height/2, width, height);
                 
-                // 繪製邊框
                 ctx.strokeStyle = '#2B7CE9';
                 ctx.lineWidth = 1;
                 ctx.strokeRect(x - width/2, y - height/2, width, height);
                 
-                // 繪製文字
                 ctx.fillStyle = 'black';
                 var fontSize = (node.font && node.font.size) || 14;
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'top';
                 
-                // 處理多行文字和HTML標籤
                 var label = node.label || node.id;
                 var lines = label.split('\\n');
                 var lineHeight = fontSize + 4;
                 var padding = 10;
-                var startY = y - height/2 + padding;
+                
+                // **最終修正: 根據文字塊的實際高度來決定繪製起點，確保垂直置中**
+                var startY = y - nodeSize.textBlockHeight / 2;
                 var startX = x - width/2 + padding;
                 var maxLineWidth = width - padding * 2;
                 
                 var currentY = startY;
                 
                 lines.forEach((line, index) => {
-                    // 移除HTML標籤但保留格式信息
-                    var cleanLine = line.replace(/<b>(.*?)<\\/b>/g, '$1');
-                    cleanLine = cleanLine.replace(/<i>(.*?)<\\/i>/g, '$1');
-                    cleanLine = cleanLine.replace(/<[^>]*>/g, '');
-                    
-                    // 檢查格式
+                    var cleanLine = line.replace(/<b>(.*?)<\\/b>/g, '$1').replace(/<i>(.*?)<\\/i>/g, '$1').replace(/<[^>]*>/g, '');
                     var isBold = line.includes('<b>');
                     var isItalic = line.includes('<i>');
                     
-                    // 設定字體樣式
                     var fontStyle = '';
                     if (isBold && isItalic) {
                         fontStyle = 'bold italic ';
@@ -302,7 +347,11 @@ class GraphGenerator:
                     }
                     ctx.font = fontStyle + fontSize + 'px Arial';
                     
-                    // 文字換行處理
+                    if (cleanLine.trim() === '') {
+                        currentY += lineHeight / 2;
+                        return;
+                    }
+
                     var words = cleanLine.split(' ');
                     var currentLine = '';
                     
@@ -320,14 +369,12 @@ class GraphGenerator:
                         }
                     }
                     
-                    // 繪製最後一行
                     if (currentLine.trim()) {
                         ctx.fillText(currentLine.trim(), startX, currentY);
                         currentY += lineHeight;
                     }
                     
-                    // 為不同段落增加額外間距
-                    if (index < lines.length - 1) {
+                    if (index < lines.length - 1 && cleanLine.trim() !== '') {
                         currentY += 4;
                     }
                 });
@@ -337,21 +384,25 @@ class GraphGenerator:
                 var angle = Math.atan2(toY - fromY, toX - fromX);
                 var length = 10;
                 
-                // 使用目標節點的實際尺寸來計算箭頭位置
                 var toNodeSize = this.nodeSizes[toNodeId];
-                var nodeWidth = toNodeSize ? toNodeSize.width : 200;
-                var nodeHeight = toNodeSize ? toNodeSize.height : 100;
+                if (!toNodeSize) return;
+
+                var nodeWidth = toNodeSize.width;
+                var nodeHeight = toNodeSize.height;
                 
-                // 計算到節點邊緣的距離
-                var dx = Math.abs(Math.cos(angle)) * nodeWidth / 2;
-                var dy = Math.abs(Math.sin(angle)) * nodeHeight / 2;
-                var edgeDistance = Math.max(dx, dy);
+                var dx = toX - fromX;
+                var dy = toY - fromY;
                 
-                var distance = Math.sqrt((toX - fromX) * (toX - fromX) + (toY - fromY) * (toY - fromY));
-                var ratio = Math.max(0, (distance - edgeDistance) / distance);
-                var arrowX = fromX + (toX - fromX) * ratio;
-                var arrowY = fromY + (toY - fromY) * ratio;
+                var t = 1;
+                if (Math.abs(dx) * nodeHeight > Math.abs(dy) * nodeWidth) {
+                    t = Math.abs(nodeWidth / (2 * dx));
+                } else {
+                    t = Math.abs(nodeHeight / (2 * dy));
+                }
                 
+                var arrowX = fromX + dx * (1 - t);
+                var arrowY = fromY + dy * (1 - t);
+
                 ctx.beginPath();
                 ctx.moveTo(arrowX, arrowY);
                 ctx.lineTo(arrowX - length * Math.cos(angle - Math.PI / 6), 
@@ -367,15 +418,13 @@ class GraphGenerator:
             Network.prototype.setupEvents = function() {
                 var self = this;
                 
-                // 鼠標按下事件
                 this.canvas.addEventListener('mousedown', function(e) {
                     var rect = self.canvas.getBoundingClientRect();
-                    var mouseX = (e.clientX - rect.left - self.viewOffset.x) / self.scale;
-                    var mouseY = (e.clientY - rect.top - self.viewOffset.y) / self.scale;
+                    var mouseX = (e.clientX - rect.left) / self.scale - self.viewOffset.x;
+                    var mouseY = (e.clientY - rect.top) / self.scale - self.viewOffset.y;
                     
                     self.lastMousePos = {x: e.clientX - rect.left, y: e.clientY - rect.top};
                     
-                    // 檢查是否點擊在節點上
                     var nodes = self.nodes.get();
                     var nodeClicked = false;
                     
@@ -384,17 +433,11 @@ class GraphGenerator:
                         var pos = self.nodePositions[node.id];
                         var nodeSize = self.nodeSizes[node.id];
                         
-                        if (!nodeSize) {
-                            self.calculateNodeSize(node);
-                            nodeSize = self.nodeSizes[node.id];
-                        }
-                        
-                        var width = nodeSize.width;
-                        var height = nodeSize.height;
+                        if (!nodeSize) continue;
                         
                         if (pos && 
-                            mouseX >= pos.x - width/2 && mouseX <= pos.x + width/2 &&
-                            mouseY >= pos.y - height/2 && mouseY <= pos.y + height/2) {
+                            mouseX >= pos.x - nodeSize.width/2 && mouseX <= pos.x + nodeSize.width/2 &&
+                            mouseY >= pos.y - nodeSize.height/2 && mouseY <= pos.y + nodeSize.height/2) {
                             self.isDragging = true;
                             self.dragNode = node.id;
                             self.dragOffset = {
@@ -407,42 +450,36 @@ class GraphGenerator:
                         }
                     }
                     
-                    // 如果沒有點擊節點，則開始拖拽視圖
                     if (!nodeClicked) {
                         self.isDraggingView = true;
                         self.canvas.style.cursor = 'grabbing';
                     }
                 });
                 
-                // 鼠標移動事件
                 this.canvas.addEventListener('mousemove', function(e) {
                     var rect = self.canvas.getBoundingClientRect();
-                    var mouseX = (e.clientX - rect.left - self.viewOffset.x) / self.scale;
-                    var mouseY = (e.clientY - rect.top - self.viewOffset.y) / self.scale;
-                    var currentMousePos = {x: e.clientX - rect.left, y: e.clientY - rect.top};
+                    var mouseX = (e.clientX - rect.left) / self.scale - self.viewOffset.x;
+                    var mouseY = (e.clientY - rect.top) / self.scale - self.viewOffset.y;
                     
                     if (self.isDragging && self.dragNode) {
-                        // 拖拽節點
                         self.nodePositions[self.dragNode] = {
                             x: mouseX - self.dragOffset.x,
                             y: mouseY - self.dragOffset.y
                         };
                         self.draw();
                     } else if (self.isDraggingView) {
-                        // 拖拽整個視圖
-                        var deltaX = currentMousePos.x - self.lastMousePos.x;
-                        var deltaY = currentMousePos.y - self.lastMousePos.y;
+                        var currentMousePos = {x: e.clientX - rect.left, y: e.clientY - rect.top};
+                        var deltaX = (currentMousePos.x - self.lastMousePos.x) / self.scale;
+                        var deltaY = (currentMousePos.y - self.lastMousePos.y) / self.scale;
                         
                         self.viewOffset.x += deltaX;
                         self.viewOffset.y += deltaY;
                         
                         self.draw();
+                        self.lastMousePos = currentMousePos;
                     }
-                    
-                    self.lastMousePos = currentMousePos;
                 });
                 
-                // 鼠標釋放事件
                 this.canvas.addEventListener('mouseup', function(e) {
                     self.isDragging = false;
                     self.isDraggingView = false;
@@ -450,7 +487,6 @@ class GraphGenerator:
                     self.canvas.style.cursor = 'grab';
                 });
                 
-                // 滾輪縮放事件
                 this.canvas.addEventListener('wheel', function(e) {
                     e.preventDefault();
                     
@@ -461,31 +497,23 @@ class GraphGenerator:
                     var scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
                     var newScale = self.scale * scaleFactor;
                     
-                    // 限制縮放範圍
                     newScale = Math.max(0.1, Math.min(5, newScale));
                     
                     if (newScale !== self.scale) {
-                        // 計算縮放中心點
-                        var scaleChange = newScale / self.scale;
-                        
-                        self.viewOffset.x = mouseX - (mouseX - self.viewOffset.x) * scaleChange;
-                        self.viewOffset.y = mouseY - (mouseY - self.viewOffset.y) * scaleChange;
-                        
+                        var mousePoint = {
+                            x: (mouseX / self.scale) - self.viewOffset.x,
+                            y: (mouseY / self.scale) - self.viewOffset.y
+                        };
                         self.scale = newScale;
+                        var newMousePoint = {
+                            x: (mouseX / self.scale) - self.viewOffset.x,
+                            y: (mouseY / self.scale) - self.viewOffset.y
+                        };
+                        self.viewOffset.x += newMousePoint.x - mousePoint.x;
+                        self.viewOffset.y += newMousePoint.y - mousePoint.y;
                         self.draw();
                     }
                 });
-            };
-            
-            Network.prototype.getPositions = function() {
-                var result = {};
-                for (var nodeId in this.nodePositions) {
-                    result[nodeId] = {
-                        x: this.nodePositions[nodeId].x,
-                        y: this.nodePositions[nodeId].y
-                    };
-                }
-                return result;
             };
             
             return {
@@ -529,7 +557,7 @@ class GraphGenerator:
             font-family: sans-serif;
             font-size: 14px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            min-width: 200px;
+            min-width: 220px;
         }}
         
         .controls h4 {{
@@ -546,6 +574,11 @@ class GraphGenerator:
             cursor: pointer;
             display: flex;
             align-items: center;
+        }}
+
+        .control-item label.disabled {{
+            color: #888;
+            cursor: not-allowed;
         }}
         
         .control-item input[type="checkbox"] {{
@@ -564,6 +597,23 @@ class GraphGenerator:
         
         .slider-container input[type="range"] {{
             width: 100%;
+        }}
+
+        #reorganizeButton {{
+            width: 100%;
+            padding: 8px;
+            margin-top: 8px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }}
+
+        #reorganizeButton:hover {{
+            background-color: #0056b3;
         }}
         
         .legend {{
@@ -613,13 +663,19 @@ class GraphGenerator:
         
         <div class="control-item">
             <label>
-                <input type='checkbox' id='formulaToggle'> Show Full Formula Path
+                <input type='checkbox' id='shortenAddressToggle'> Hide Address Path
             </label>
         </div>
-        
+
+        <div class="control-item">
+            <label id="fullAddressLabel">
+                <input type='checkbox' id='addressToggle'> Show Full Address Path
+            </label>
+        </div>
+
         <div class="control-item">
             <label>
-                <input type='checkbox' id='addressToggle'> Show Full Address Path
+                <input type='checkbox' id='formulaToggle'> Show Full Formula Path
             </label>
         </div>
         
@@ -630,10 +686,18 @@ class GraphGenerator:
             <input type='range' id='fontSizeSlider' min='10' max='24' value='14'>
         </div>
         
+        <div class="slider-container">
+            <label for='verticalSpacingSlider'>
+                Vertical Spacing: <span id='verticalSpacingValue'>450</span>px
+            </label>
+            <input type='range' id='verticalSpacingSlider' min='250' max='800' value='450'>
+        </div>
+
+        <button id="reorganizeButton">Re-organize Layout</button>
+
         <div class="legend">
             <h5>File Legend</h5>
             <div id='fileLegend'>
-                <!-- 動態生成的檔案圖例 -->
             </div>
             <div class="legend-help">
                 相同顏色 = 同一檔案<br>
@@ -642,66 +706,49 @@ class GraphGenerator:
         </div>
     </div>
     
-    <!-- 圖表容器 -->
     <div id="mynetwork"></div>
 
-    <!-- 內嵌的 vis.js -->
     <script type="text/javascript">
         {vis_js_content}
     </script>
 
-    <!-- 主要應用邏輯 -->
     <script type="text/javascript">
-        // 全局變量
         var nodes;
         var edges;
         var network;
         var nodeData = {nodes_json};
         var edgeData = {edges_json};
 
-        // 初始化圖表
         function initGraph() {{
             console.log('Initializing graph with', nodeData.length, 'nodes and', edgeData.length, 'edges');
-            
             var container = document.getElementById('mynetwork');
-            
             nodes = new vis.DataSet(nodeData);
             edges = new vis.DataSet(edgeData);
-            
-            var data = {{
-                nodes: nodes,
-                edges: edges
-            }};
-            
+            var data = {{ nodes: nodes, edges: edges }};
             var options = {{
-                interaction: {{
-                    dragNodes: true,
-                    dragView: true,
-                    zoomView: true
-                }},
-                physics: {{
-                    enabled: false
-                }}
+                interaction: {{ dragNodes: true, dragView: true, zoomView: true }},
+                physics: {{ enabled: false }}
             }};
-            
             network = new vis.Network(container, data, options);
-            
             console.log('Graph initialized successfully');
-            
-            // 初始化控制項
             initControls();
         }}
         
-        // 初始化控制項
         function initControls() {{
-            var formulaToggle = document.getElementById('formulaToggle');
+            var shortenAddressToggle = document.getElementById('shortenAddressToggle');
             var addressToggle = document.getElementById('addressToggle');
+            var fullAddressLabel = document.getElementById('fullAddressLabel');
+            var formulaToggle = document.getElementById('formulaToggle');
             var fontSizeSlider = document.getElementById('fontSizeSlider');
             var fontSizeValue = document.getElementById('fontSizeValue');
+            var verticalSpacingSlider = document.getElementById('verticalSpacingSlider');
+            var verticalSpacingValue = document.getElementById('verticalSpacingValue');
+            var reorganizeButton = document.getElementById('reorganizeButton');
             
             function updateNodeLabels() {{
                 if (!network || !nodes) return;
                 
+                var shortenAddress = shortenAddressToggle.checked;
                 var showFullAddress = addressToggle.checked;
                 var showFullFormula = formulaToggle.checked;
                 var fontSize = parseInt(fontSizeSlider.value);
@@ -710,14 +757,19 @@ class GraphGenerator:
                 var updatedNodes = [];
                 
                 allNodes.forEach(function(node) {{
-                    var addressLabel = showFullAddress ? node.full_address_label : node.short_address_label;
+                    var addressLabel;
+                    if (shortenAddress) {{
+                        addressLabel = node.shortest_address_label || node.short_address_label;
+                    }} else {{
+                        addressLabel = showFullAddress ? node.full_address_label : node.short_address_label;
+                    }}
+
                     var formulaLabel = showFullFormula ? node.full_formula_label : node.short_formula_label;
                     
-                    // 保持原始格式：Address : <b>...</b>
                     var newLabel = 'Address : <b>' + (addressLabel || node.short_address_label) + '</b>';
                     
                     if (formulaLabel && formulaLabel !== 'N/A' && formulaLabel !== null) {{
-                        var displayFormula = formulaLabel.indexOf('=') === 0 ? formulaLabel : '=' + formulaLabel;
+                        var displayFormula = formulaLabel.startsWith('=') ? formulaLabel : '=' + formulaLabel;
                         newLabel += '\\n\\nFormula : <i>' + displayFormula + '</i>';
                     }} else {{
                         newLabel += '\\n\\nFormula : <i>N/A</i>';
@@ -734,43 +786,45 @@ class GraphGenerator:
                 
                 if (updatedNodes.length > 0) {{
                     nodes.update(updatedNodes);
-                    // 重新計算所有節點尺寸
-                    var allNodes = nodes.get();
-                    allNodes.forEach(function(node) {{
-                        network.calculateNodeSize(node);
-                    }});
-                    network.draw();
+                    allNodes.forEach(node => network.calculateNodeSize(node));
+                    network.reorganizeLayout();
                 }}
             }}
             
             function updateFontSize() {{
-                var fontSize = parseInt(fontSizeSlider.value);
-                fontSizeValue.textContent = fontSize;
+                fontSizeValue.textContent = fontSizeSlider.value;
                 updateNodeLabels();
+            }}
+
+            function updateVerticalSpacing() {{
+                verticalSpacingValue.textContent = verticalSpacingSlider.value;
+                network.reorganizeLayout();
+            }}
+
+            function handleReorganize() {{
+                if (network) {{
+                    console.log("Re-organizing layout...");
+                    network.reorganizeLayout();
+                }}
             }}
             
             function generateFileLegend() {{
                 var fileLegendDiv = document.getElementById('fileLegend');
                 if (!fileLegendDiv || !nodes) return;
-                
                 var fileColors = new Map();
                 var allNodes = nodes.get();
-                
                 allNodes.forEach(function(node) {{
                     var color = node.color || '#808080';
                     var filename = node.filename || 'Unknown File';
-                    
                     if (!fileColors.has(filename)) {{
                         fileColors.set(filename, color);
                     }}
                 }});
-                
                 var sortedFiles = Array.from(fileColors.entries()).sort(function(a, b) {{
                     if (a[0] === 'Current File') return -1;
                     if (b[0] === 'Current File') return 1;
                     return a[0].localeCompare(b[0]);
                 }});
-                
                 var legendHTML = '';
                 sortedFiles.forEach(function(item) {{
                     var filename = item[0];
@@ -780,20 +834,29 @@ class GraphGenerator:
                     legendHTML += '<span class="legend-text">' + filename + '</span>';
                     legendHTML += '</div>';
                 }});
-                
                 fileLegendDiv.innerHTML = legendHTML;
             }}
             
-            // 綁定事件
-            if (addressToggle) addressToggle.addEventListener('change', updateNodeLabels);
-            if (formulaToggle) formulaToggle.addEventListener('change', updateNodeLabels);
-            if (fontSizeSlider) fontSizeSlider.addEventListener('input', updateFontSize);
+            shortenAddressToggle.addEventListener('change', function() {{
+                if (this.checked) {{
+                    addressToggle.disabled = true;
+                    fullAddressLabel.classList.add('disabled');
+                }} else {{
+                    addressToggle.disabled = false;
+                    fullAddressLabel.classList.remove('disabled');
+                }}
+                updateNodeLabels();
+            }});
+
+            addressToggle.addEventListener('change', updateNodeLabels);
+            formulaToggle.addEventListener('change', updateNodeLabels);
+            fontSizeSlider.addEventListener('input', updateFontSize);
+            verticalSpacingSlider.addEventListener('input', updateVerticalSpacing);
+            reorganizeButton.addEventListener('click', handleReorganize);
             
-            // 生成圖例
             generateFileLegend();
         }}
         
-        // 頁面加載完成後初始化
         window.addEventListener('load', function() {{
             initGraph();
         }});
@@ -804,33 +867,25 @@ class GraphGenerator:
         return html_template
 
     def _safe_string(self, value):
-        """
-        安全地處理字符串，移除可能導致問題的字符
-        """
         if value is None:
             return ""
         
         str_value = str(value)
-        # 移除可能導致編碼問題的字符
         try:
             return str_value.encode('utf-8', errors='ignore').decode('utf-8')
         except:
             return str_value.encode('ascii', errors='ignore').decode('ascii')
 
     def _safe_json_encode(self, data):
-        """
-        安全地將數據編碼為 JSON
-        """
         try:
             return json.dumps(data, ensure_ascii=False, separators=(',', ':'))
         except Exception as e:
             print(f"JSON encoding error: {e}")
-            # 備用方案
             return json.dumps(data, ensure_ascii=True, separators=(',', ':'))
 
     def _calculate_node_positions(self):
         """
-        根據節點的層級計算初始座標
+        只計算節點的初始 X 座標，Y 座標由 JS 根據層級和用戶設置的間距動態計算
         """
         level_counts = {}
         for node in self.nodes_data:
@@ -839,8 +894,7 @@ class GraphGenerator:
                 level_counts[level] = 0
             level_counts[level] += 1
 
-        level_y_step = 250
-        level_x_step = 400
+        level_x_step = 450
 
         current_level_counts = {level: 0 for level in level_counts}
 
@@ -849,9 +903,8 @@ class GraphGenerator:
             total_in_level = level_counts.get(level, 1)
             current_index_in_level = current_level_counts.get(level, 0)
             
-            y = level * level_y_step
             x = (current_index_in_level - (total_in_level - 1) / 2.0) * level_x_step
             
             node['x'] = x
-            node['y'] = y
+            node['y'] = 0
             current_level_counts[level] = current_level_counts.get(level, 0) + 1
