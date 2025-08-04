@@ -160,7 +160,6 @@ class GraphGenerator:
                 this.setupEvents();
             };
             
-            // **最終修正: 徹底修正 padding 計算，確保垂直置中**
             Network.prototype.calculateNodeSize = function(node) {
                 var tempCtx = this.ctx;
                 var fontSize = (node.font && node.font.size) || 14;
@@ -207,13 +206,12 @@ class GraphGenerator:
                     }
                 });
                 
-                // **修正: 移除最後一行多餘的行高**
                 textBlockHeight -= 4;
 
                 this.nodeSizes[node.id] = {
                     width: actualContentWidth + padding * 2,
                     height: Math.max(minHeight, textBlockHeight + padding * 2),
-                    textBlockHeight: textBlockHeight // **新增: 儲存純文字塊的高度**
+                    textBlockHeight: textBlockHeight
                 };
             };
             
@@ -325,7 +323,6 @@ class GraphGenerator:
                 var lineHeight = fontSize + 4;
                 var padding = 10;
                 
-                // **最終修正: 根據文字塊的實際高度來決定繪製起點，確保垂直置中**
                 var startY = y - nodeSize.textBlockHeight / 2;
                 var startX = x - width/2 + padding;
                 var maxLineWidth = width - padding * 2;
@@ -555,9 +552,12 @@ class GraphGenerator:
             border-radius: 8px;
             z-index: 1000;
             font-family: sans-serif;
-            font-size: 14px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            min-width: 220px;
+            
+            /* **修改: 將闊度增加到 360px** */
+            width: 360px;
+            max-height: 90vh;
+            overflow-y: auto;
         }}
         
         .controls h4 {{
@@ -608,7 +608,7 @@ class GraphGenerator:
             border: none;
             border-radius: 5px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 1em;
             font-weight: bold;
         }}
 
@@ -630,27 +630,29 @@ class GraphGenerator:
         
         .legend-item {{
             display: flex;
-            align-items: center;
-            margin-bottom: 4px;
+            align-items: flex-start;
+            margin-bottom: 6px;
         }}
         
         .legend-color {{
-            width: 16px;
-            height: 16px;
+            width: 1.2em;
+            height: 1.2em;
             margin-right: 8px;
             border-radius: 3px;
             border: 1px solid #ddd;
+            flex-shrink: 0;
+            margin-top: 0.1em;
         }}
         
         .legend-text {{
-            font-size: 12px;
             font-weight: 500;
             color: #333;
+            word-break: break-all;
         }}
         
         .legend-help {{
             margin-top: 8px;
-            font-size: 11px;
+            font-size: 0.8em;
             color: #666;
         }}
     </style>
@@ -658,7 +660,7 @@ class GraphGenerator:
 
 <body>
     <!-- 控制面板 -->
-    <div class="controls">
+    <div class="controls" id="controls-panel">
         <h4>Display Options</h4>
         
         <div class="control-item">
@@ -681,7 +683,7 @@ class GraphGenerator:
         
         <div class="slider-container">
             <label for='fontSizeSlider'>
-                Font Size: <span id='fontSizeValue'>14</span>px
+                Node Font Size: <span id='fontSizeValue'>14</span>px
             </label>
             <input type='range' id='fontSizeSlider' min='10' max='24' value='14'>
         </div>
@@ -690,7 +692,14 @@ class GraphGenerator:
             <label for='verticalSpacingSlider'>
                 Vertical Spacing: <span id='verticalSpacingValue'>450</span>px
             </label>
-            <input type='range' id='verticalSpacingSlider' min='250' max='800' value='450'>
+            <input type='range' id='verticalSpacingSlider' min='0' max='800' value='450'>
+        </div>
+        
+        <div class="slider-container">
+            <label for='uiFontSizeSlider'>
+                UI Font Size: <span id='uiFontSizeValue'>14</span>px
+            </label>
+            <input type='range' id='uiFontSizeSlider' min='10' max='24' value='14'>
         </div>
 
         <button id="reorganizeButton">Re-organize Layout</button>
@@ -735,6 +744,7 @@ class GraphGenerator:
         }}
         
         function initControls() {{
+            var controlsPanel = document.getElementById('controls-panel');
             var shortenAddressToggle = document.getElementById('shortenAddressToggle');
             var addressToggle = document.getElementById('addressToggle');
             var fullAddressLabel = document.getElementById('fullAddressLabel');
@@ -743,6 +753,8 @@ class GraphGenerator:
             var fontSizeValue = document.getElementById('fontSizeValue');
             var verticalSpacingSlider = document.getElementById('verticalSpacingSlider');
             var verticalSpacingValue = document.getElementById('verticalSpacingValue');
+            var uiFontSizeSlider = document.getElementById('uiFontSizeSlider');
+            var uiFontSizeValue = document.getElementById('uiFontSizeValue');
             var reorganizeButton = document.getElementById('reorganizeButton');
             
             function updateNodeLabels() {{
@@ -791,7 +803,7 @@ class GraphGenerator:
                 }}
             }}
             
-            function updateFontSize() {{
+            function updateNodeFontSize() {{
                 fontSizeValue.textContent = fontSizeSlider.value;
                 updateNodeLabels();
             }}
@@ -799,6 +811,12 @@ class GraphGenerator:
             function updateVerticalSpacing() {{
                 verticalSpacingValue.textContent = verticalSpacingSlider.value;
                 network.reorganizeLayout();
+            }}
+
+            function updateUiFontSize() {{
+                var newSize = uiFontSizeSlider.value + 'px';
+                uiFontSizeValue.textContent = uiFontSizeSlider.value;
+                controlsPanel.style.fontSize = newSize;
             }}
 
             function handleReorganize() {{
@@ -850,11 +868,13 @@ class GraphGenerator:
 
             addressToggle.addEventListener('change', updateNodeLabels);
             formulaToggle.addEventListener('change', updateNodeLabels);
-            fontSizeSlider.addEventListener('input', updateFontSize);
+            fontSizeSlider.addEventListener('input', updateNodeFontSize);
             verticalSpacingSlider.addEventListener('input', updateVerticalSpacing);
+            uiFontSizeSlider.addEventListener('input', updateUiFontSize);
             reorganizeButton.addEventListener('click', handleReorganize);
             
             generateFileLegend();
+            updateUiFontSize();
         }}
         
         window.addEventListener('load', function() {{
